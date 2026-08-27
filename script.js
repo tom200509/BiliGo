@@ -2113,8 +2113,8 @@ function saveTimingConfig() {
     const autoRestartInterval = parseInt(document.getElementById('auto-restart-interval').value);
     
     // 验证输入值
-    if (isNaN(messageCheckInterval) || messageCheckInterval < 0.01 || messageCheckInterval > 5) {
-        showToast('消息监测间隔必须在0.01-5秒之间', 'error');
+    if (isNaN(messageCheckInterval) || messageCheckInterval < 0.01 || messageCheckInterval > 1800) {
+        showToast('消息监测间隔必须在0.01-1800秒之间', 'error');
         return;
     }
     
