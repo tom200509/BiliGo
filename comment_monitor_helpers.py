@@ -53,6 +53,7 @@ def _fetch_sub_pages_legacy(
     bvid: str | None,
     max_pages: int,
     fetch_gap: float,
+    rcount: int | None = None,
 ) -> list[dict]:
     global _sub_reply_blocked_until
 
@@ -72,12 +73,59 @@ def _fetch_sub_pages_legacy(
         ),
     }
 
+    # B站楼中楼实际单页最多返回约20条
+    page_size = min(max(int(ps), 1), 20)
+
+    # 至少保持2秒请求间隔
     request_gap = max(float(fetch_gap or 0), 2.0)
 
-    for pn in range(1, max_pages + 1):
+    # 最多允许抓取多少页
+    try:
+        max_pages = max(1, int(max_pages))
+    except (TypeError, ValueError):
+        max_pages = 1
 
-        # 每一次楼中楼请求都限速，
-        # 包括不同根评论的第一页
+    # 主评论接口已经提供 rcount，
+    # 用它计算楼中楼最后一页。
+    try:
+        total_replies = max(0, int(rcount or 0))
+    except (TypeError, ValueError):
+        total_replies = 0
+
+    if total_replies > 0:
+        # 例如：
+        # 1~20条   -> 最后一页 1
+        # 21~40条  -> 最后一页 2
+        # 41~60条  -> 最后一页 3
+        # 81条     -> 最后一页 5
+        total_pages = max(
+            1,
+            (total_replies + page_size - 1) // page_size
+        )
+
+        # max_pages=1：只抓最后1页
+        # max_pages=2：抓最后2页
+        pages_to_fetch = min(max_pages, total_pages)
+
+        first_page = max(
+            1,
+            total_pages - pages_to_fetch + 1
+        )
+
+        page_numbers = range(
+            first_page,
+            total_pages + 1
+        )
+
+    else:
+        # 极少数情况下拿不到 rcount，
+        # 保留旧行为作为兼容：
+        # 从第一页开始。
+        page_numbers = range(1, max_pages + 1)
+
+    for pn in page_numbers:
+
+        # 每一次楼中楼请求都限速
         time.sleep(request_gap)
 
         r = session.get(
@@ -87,7 +135,7 @@ def _fetch_sub_pages_legacy(
                 "oid": oid,
                 "root": root,
                 "pn": pn,
-                "ps": min(max(int(ps), 1), 20),
+                "ps": page_size,
             },
             headers=headers,
             timeout=20,
@@ -100,7 +148,7 @@ def _fetch_sub_pages_legacy(
             )
             return []
 
-        # 429同样进入冷却
+        # HTTP 429：同样进入冷却
         if r.status_code == 429:
             _sub_reply_blocked_until = (
                 time.time() + _SUB_REPLY_RISK_COOLDOWN
@@ -117,6 +165,7 @@ def _fetch_sub_pages_legacy(
 
         api_code = j.get("code")
 
+        # B站业务层限流/风控
         if api_code in (-509, -352):
             _sub_reply_blocked_until = (
                 time.time() + _SUB_REPLY_RISK_COOLDOWN
@@ -133,9 +182,6 @@ def _fetch_sub_pages_legacy(
         if not chunk:
             break
 
-        if len(chunk) < min(ps, 20):
-            break
-
     return out
 
 
@@ -148,13 +194,16 @@ def fetch_sub_replies_all(
     wbi_cache: dict,
     max_pages: int,
     fetch_gap: float,
+    rcount: int | None = None,
 ) -> list[dict]:
     """
-    拉取某条根评论下的全部楼中楼。
+    拉取某条根评论下的楼中楼。
 
-    直接使用 /x/v2/reply/reply。
-    /x/v2/reply/wbi/reply 会返回 HTTP 404，
-    因此不再进行无效的 WBI 请求。
+    优先抓取最后几页：
+    max_pages=1 -> 最后一页
+    max_pages=2 -> 最后两页
+
+    这样更适合“仅回复新评论”的监控模式。
     """
     return _fetch_sub_pages_legacy(
         session,
@@ -164,6 +213,7 @@ def fetch_sub_replies_all(
         bvid,
         max_pages,
         fetch_gap,
+        rcount=rcount,
     )
 
 
@@ -232,6 +282,7 @@ def expand_video_comments_for_monitor(
                 wbi_cache,
                 max_sub_pages,
                 fetch_gap,
+                rcount=rcount,
             )
 
             # 完整楼中楼接口失败时，如果已有 preview，
