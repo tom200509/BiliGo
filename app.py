@@ -2101,7 +2101,7 @@ def monitor_loop_core(api, my_uid, account_prefix, cache):
                 add_log(f"[{account_prefix}] 📬 检测到 {len(new_message_sessions)} 个新消息会话", 'info', system='message')
             
             if not check_sessions:
-                time.sleep(0.2)
+                time.sleep(max(5.0, float(config.get('message_check_interval', 5.0))))
                 continue
             
             # 处理会话
@@ -2551,7 +2551,13 @@ def monitor_messages():
                         error_msg = sessions_data.get('message', '未知错误')
                         add_log(f"API返回错误: {error_msg}", 'warning', system='message')
                         consecutive_errors += 1
-                        
+
+                        # 请求频率限制：触发后长时间等待，避免持续撞限流
+                        if '频繁' in str(error_msg):
+                            add_log("触发B站API频率限制，暂停60秒后重试", 'warning', system='message')
+                            time.sleep(60)
+                            continue
+
                         # 如果是认证相关错误，重新初始化
                         if sessions_data.get('code') in [-101, -111, -400, -403]:
                             add_log("认证错误，重新初始化API", 'warning', system='message')
@@ -2559,8 +2565,8 @@ def monitor_messages():
                                 api = BilibiliAPI(config['sessdata'], config['bili_jct'])
                             except Exception as e:
                                 add_log(f"认证错误后API重新初始化失败: {e}", 'error', system='message')
-                        
-                        time.sleep(2)
+
+                        time.sleep(max(5.0, float(config.get('message_check_interval', 5.0))))
                         continue
                     
                     consecutive_errors = 0  # 重置连续错误计数
@@ -2625,13 +2631,13 @@ def monitor_messages():
                     
                     sessions = sessions_data.get('data', {}).get('session_list', [])
                     if not sessions:
-                        time.sleep(0.2)
+                        time.sleep(max(5.0, float(config.get('message_check_interval', 5.0))))
                         continue
                     
                     # 过滤掉无效的会话（None 或空对象）
                     sessions = [s for s in sessions if s and isinstance(s, dict)]
                     if not sessions:
-                        time.sleep(0.2)
+                        time.sleep(max(5.0, float(config.get('message_check_interval', 5.0))))
                         continue
                     
                     # 按最后消息时间排序（安全版本）
