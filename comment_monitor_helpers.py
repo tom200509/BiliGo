@@ -49,10 +49,27 @@ def _fetch_sub_pages_legacy(
     fetch_gap: float,
 ) -> list[dict]:
     out: list[dict] = []
-    headers = {"Origin": "https://www.bilibili.com", "Referer": f"https://www.bilibili.com/video/{bvid}" if bvid else "https://www.bilibili.com/"}
+
+    headers = {
+        "Origin": "https://www.bilibili.com",
+        "Referer": (
+            f"https://www.bilibili.com/video/{bvid}"
+            if bvid
+            else "https://www.bilibili.com/"
+        ),
+    }
+
+    # 楼中楼请求之间至少间隔 2 秒。
+    # comment_fetch_gap 即使配置得更低，也不会低于 2 秒。
+    request_gap = max(float(fetch_gap or 0), 2.0)
+
     for pn in range(1, max_pages + 1):
-        if pn > 1 and fetch_gap > 0:
-            time.sleep(fetch_gap)
+
+        # 关键修复：
+        # 原代码只有 pn > 1 才等待，
+        # 导致不同根评论的第一页被连续请求。
+        time.sleep(request_gap)
+
         r = session.get(
             "https://api.bilibili.com/x/v2/reply/reply",
             params={
@@ -65,20 +82,41 @@ def _fetch_sub_pages_legacy(
             headers=headers,
             timeout=20,
         )
+
+        # HTTP 412 / 429：
+        # 触发风控后不要马上继续撞下一个请求。
+        if r.status_code in (412, 429):
+            time.sleep(60)
+            break
+
         if r.status_code != 200:
             break
+
         try:
             j = r.json()
         except Exception:
             break
-        if j.get("code") != 0:
+
+        api_code = j.get("code")
+
+        # B站业务层频率限制 / 风控
+        if api_code in (-509, -412, -352):
+            time.sleep(60)
             break
+
+        if api_code != 0:
+            break
+
         chunk = (j.get("data") or {}).get("replies") or []
+
         out.extend(chunk)
+
         if not chunk:
             break
+
         if len(chunk) < min(ps, 20):
             break
+
     return out
 
 
