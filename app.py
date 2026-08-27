@@ -3704,8 +3704,8 @@ def handle_timing_config():
                 interval = float(data['message_check_interval'])
                 if interval < 0.01:
                     return jsonify({'success': False, 'error': '消息监测间隔不能少于0.01秒'})
-                elif interval > 5.0:
-                    return jsonify({'success': False, 'error': '消息监测间隔不能超过5秒'})
+                elif interval > 1800.0:
+                    return jsonify({'success': False, 'error': '消息监测间隔不能超过1800秒'})
                 
                 old_value = config.get('message_check_interval', 0.05)
                 config['message_check_interval'] = interval
