@@ -2372,6 +2372,9 @@ def monitor_messages():
     global monitoring, message_cache, last_message_times, last_send_time, monitor_thread
     global followers_cache, welcome_sent_cache, last_follow_check
     global unfollowers_cache, follow_history, monitor_threads
+
+    # 仅回复新消息模式的首次会话基线标记
+    message_baseline_initialized = False
     
     # 检查是否启用多账号模式
     if config.get('multi_account_mode', False):
@@ -2639,7 +2642,63 @@ def monitor_messages():
                     if not sessions:
                         time.sleep(max(5.0, float(config.get('message_check_interval', 5.0))))
                         continue
-                    
+                        
+            # =========================================================
+            # 仅回复新消息模式：首次获取会话列表时只建立基线
+            # 不再对现有历史会话逐个调用 fetch_session_msgs
+            # =========================================================
+            if (
+                config.get('only_reply_new_messages', False)
+                and not message_baseline_initialized
+            ):
+                initialized_count = 0
+
+                for session in sessions:
+                    if not session or not isinstance(session, dict):
+                        continue
+
+                    talker_id = session.get('talker_id')
+                    last_msg = session.get('last_msg')
+
+                    if not talker_id:
+                        continue
+
+                    if not isinstance(last_msg, dict):
+                        continue
+
+                    last_msg_time = last_msg.get('timestamp', 0)
+
+                    try:
+                        last_msg_time = int(last_msg_time or 0)
+                    except (TypeError, ValueError):
+                        last_msg_time = 0
+
+                    if last_msg_time > 0:
+                        last_message_times[talker_id] = last_msg_time
+                        initialized_count += 1
+
+                message_baseline_initialized = True
+
+                add_log(
+                    f"✅ 私信基线初始化完成：记录 {initialized_count} 个现有会话，"
+                    "之后只检查真正出现新消息的会话",
+                    'success',
+                    system='message'
+                )
+
+                time.sleep(
+                    max(
+                        5.0,
+                        float(
+                            config.get(
+                                'message_check_interval',
+                                60
+                            )
+                        )
+                    )
+                )
+                continue
+                
                     # 按最后消息时间排序（安全版本）
                     try:
                         sessions.sort(key=lambda x: x.get('last_msg', {}).get('timestamp', 0) if x.get('last_msg') else 0, reverse=True)
@@ -2647,47 +2706,75 @@ def monitor_messages():
                         add_log(f"会话排序异常: {sort_error}，使用原始顺序", 'warning', system='message')
                         # 如果排序失败，继续使用原始顺序
                     
-                    # 筛选需要检查的会话（扩大范围确保不遗漏）
-                    check_sessions = []
-                    new_message_sessions = []  # 有新消息的会话（优先处理）
-                    active_sessions = []  # 活跃会话（次要处理）
-                    
-                    # 检查所有会话，不限制数量，避免漏回复
-                    for session in sessions:
-                        # 安全检查：确保session是有效的字典
-                        if not session or not isinstance(session, dict):
-                            continue
-                            
-                        talker_id = session.get('talker_id')
-                        if not talker_id:
-                            continue
-                        
-                        # 安全获取最后消息时间
-                        last_msg = session.get('last_msg')
-                        if last_msg and isinstance(last_msg, dict):
-                            last_msg_time = last_msg.get('timestamp', 0)
-                        else:
-                            last_msg_time = 0
-                        
-                        recorded_time = last_message_times.get(talker_id, 0)
-                        
-                        # 检查有新消息的会话（优先级最高）
-                        if last_msg_time > recorded_time:
-                            new_message_sessions.append(session)
-                        # 或者最近5分钟内活跃的会话（次要优先级）
-                        elif last_msg_time > 0 and current_time - last_msg_time < 300:
-                            active_sessions.append(session)
-                    
-                    # 合并会话列表：新消息优先，然后是活跃会话
-                    check_sessions = new_message_sessions + active_sessions
-                    
-                    # 记录检查统计
-                    if new_message_sessions:
-                        add_log(f"📬 检测到 {len(new_message_sessions)} 个新消息会话，{len(active_sessions)} 个活跃会话", 'info', system='message')
-                    
-                    if not check_sessions:
-                        time.sleep(0.2)
-                        continue
+            # =========================================================
+            # 只处理最后消息时间真正发生变化的会话
+            # 不再重复检查最近5分钟内但没有新消息的活跃会话
+            # =========================================================
+            new_message_sessions = []
+
+            for session in sessions:
+                if not session or not isinstance(session, dict):
+                    continue
+
+                talker_id = session.get('talker_id')
+
+                if not talker_id:
+                    continue
+
+                last_msg = session.get('last_msg')
+
+                if not isinstance(last_msg, dict):
+                    continue
+
+                last_msg_time = last_msg.get('timestamp', 0)
+
+                try:
+                    last_msg_time = int(last_msg_time or 0)
+                except (TypeError, ValueError):
+                    last_msg_time = 0
+
+                recorded_time = last_message_times.get(
+                    talker_id,
+                    0
+                )
+
+                try:
+                    recorded_time = int(recorded_time or 0)
+                except (TypeError, ValueError):
+                    recorded_time = 0
+
+                # 只有最后消息时间真正变大，
+                # 才进一步读取该会话的消息详情
+                if (
+                    last_msg_time > 0
+                    and last_msg_time > recorded_time
+                ):
+                    new_message_sessions.append(session)
+
+            check_sessions = new_message_sessions
+
+            if new_message_sessions:
+                add_log(
+                    f"📬 检测到 {len(new_message_sessions)} 个新消息会话",
+                    'info',
+                    system='message'
+                )
+
+            # 没有任何新消息时，按后台配置的监测间隔等待
+            # 不能再使用 0.2 秒快速轮询
+            if not check_sessions:
+                time.sleep(
+                    max(
+                        5.0,
+                        float(
+                            config.get(
+                                'message_check_interval',
+                                60
+                            )
+                        )
+                    )
+                )
+                continue
                     
                     # 单线程顺序处理所有会话
                     # reply_count 已在循环开始时初始化
