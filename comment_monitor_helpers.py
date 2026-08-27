@@ -6,6 +6,12 @@ import time
 
 import bili_wbi
 
+# 楼中楼接口风控熔断
+_sub_reply_blocked_until = 0.0
+
+# HTTP 412 后暂停楼中楼请求 10 分钟
+_SUB_REPLY_RISK_COOLDOWN = 600
+
 
 def _member_mid(reply_item: dict) -> int | None:
     m = reply_item.get("member") or {}
@@ -48,6 +54,13 @@ def _fetch_sub_pages_legacy(
     max_pages: int,
     fetch_gap: float,
 ) -> list[dict]:
+    global _sub_reply_blocked_until
+
+    # 当前处于风控冷却期：
+    # 直接跳过楼中楼请求，但不影响普通一级评论监控
+    if time.time() < _sub_reply_blocked_until:
+        return []
+
     out: list[dict] = []
 
     headers = {
@@ -59,15 +72,12 @@ def _fetch_sub_pages_legacy(
         ),
     }
 
-    # 楼中楼请求之间至少间隔 2 秒。
-    # comment_fetch_gap 即使配置得更低，也不会低于 2 秒。
     request_gap = max(float(fetch_gap or 0), 2.0)
 
     for pn in range(1, max_pages + 1):
 
-        # 关键修复：
-        # 原代码只有 pn > 1 才等待，
-        # 导致不同根评论的第一页被连续请求。
+        # 每一次楼中楼请求都限速，
+        # 包括不同根评论的第一页
         time.sleep(request_gap)
 
         r = session.get(
@@ -83,29 +93,38 @@ def _fetch_sub_pages_legacy(
             timeout=20,
         )
 
-        # HTTP 412 / 429：
-        # 触发风控后不要马上继续撞下一个请求。
-        if r.status_code in (412, 429):
-            time.sleep(60)
-            break
+        # HTTP 412：进入10分钟楼中楼熔断
+        if r.status_code == 412:
+            _sub_reply_blocked_until = (
+                time.time() + _SUB_REPLY_RISK_COOLDOWN
+            )
+            return []
+
+        # 429同样进入冷却
+        if r.status_code == 429:
+            _sub_reply_blocked_until = (
+                time.time() + _SUB_REPLY_RISK_COOLDOWN
+            )
+            return []
 
         if r.status_code != 200:
-            break
+            return []
 
         try:
             j = r.json()
         except Exception:
-            break
+            return []
 
         api_code = j.get("code")
 
-        # B站业务层频率限制 / 风控
-        if api_code in (-509, -412, -352):
-            time.sleep(60)
-            break
+        if api_code in (-509, -352):
+            _sub_reply_blocked_until = (
+                time.time() + _SUB_REPLY_RISK_COOLDOWN
+            )
+            return []
 
         if api_code != 0:
-            break
+            return []
 
         chunk = (j.get("data") or {}).get("replies") or []
 
@@ -195,14 +214,33 @@ def expand_video_comments_for_monitor(
 
         rcount = int(tr.get("rcount") or 0)
         preview = tr.get("replies") or []
+
         if rcount <= 0 and not preview:
             continue
 
-        subs = fetch_sub_replies_all(
-            session, oid, root, sub_ps, bvid, wbi_cache, max_sub_pages, fetch_gap
-        )
-        if not subs:
-            continue
+        # 如果主评论接口返回的楼中楼预览已经完整，
+        # 直接使用预览，不再额外请求 /x/v2/reply/reply
+        if preview and rcount <= len(preview):
+            subs = preview
+        else:
+            subs = fetch_sub_replies_all(
+                session,
+                oid,
+                root,
+                sub_ps,
+                bvid,
+                wbi_cache,
+                max_sub_pages,
+                fetch_gap,
+            )
+
+            # 完整楼中楼接口失败时，如果已有 preview，
+            # 至少继续使用已有数据
+            if not subs and preview:
+                subs = preview
+
+if not subs:
+    continue
 
         author_map: dict[int, int] = {root: root_mid}
         subs_sorted = sorted(subs, key=lambda x: int(x.get("ctime") or 0))
