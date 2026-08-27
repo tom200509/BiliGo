@@ -239,8 +239,8 @@ def expand_video_comments_for_monitor(
             if not subs and preview:
                 subs = preview
 
-if not subs:
-    continue
+        if not subs:
+            continue
 
         author_map: dict[int, int] = {root: root_mid}
         subs_sorted = sorted(subs, key=lambda x: int(x.get("ctime") or 0))
