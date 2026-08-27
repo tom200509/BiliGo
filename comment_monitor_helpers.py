@@ -92,30 +92,22 @@ def fetch_sub_replies_all(
     max_pages: int,
     fetch_gap: float,
 ) -> list[dict]:
-    """拉取某条根评论下的全部楼中楼（优先 WBI，失败则回退旧版 reply）。"""
-    all_replies: list[dict] = []
-    pag = '{"offset":""}'
-    for _ in range(max(1, max_pages)):
-        if all_replies and fetch_gap > 0:
-            time.sleep(fetch_gap)
-        try:
-            j = bili_wbi.fetch_reply_wbi_reply(session, oid, root, ps, bvid, wbi_cache, pagination_str=pag)
-        except Exception:
-            break
-        if not j or j.get("code") != 0:
-            break
-        data = j.get("data") or {}
-        chunk = data.get("replies") or []
-        all_replies.extend(chunk)
-        cursor = data.get("cursor") or {}
-        pr = cursor.get("pagination_reply") or {}
-        nxt = pr.get("next_offset")
-        if not nxt or not chunk:
-            break
-        pag = json.dumps({"offset": nxt}, separators=(",", ":"))
-    if all_replies:
-        return all_replies
-    return _fetch_sub_pages_legacy(session, oid, root, ps, bvid, max_pages, fetch_gap)
+    """
+    拉取某条根评论下的全部楼中楼。
+
+    直接使用 /x/v2/reply/reply。
+    /x/v2/reply/wbi/reply 会返回 HTTP 404，
+    因此不再进行无效的 WBI 请求。
+    """
+    return _fetch_sub_pages_legacy(
+        session,
+        oid,
+        root,
+        ps,
+        bvid,
+        max_pages,
+        fetch_gap,
+    )
 
 
 def expand_video_comments_for_monitor(
