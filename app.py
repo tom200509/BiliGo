@@ -4401,19 +4401,171 @@ def add_comment_log(message, log_type='info'):
 
 class CommentAPI:
     """评论回复API类"""
+
     def __init__(self, sessdata, bili_jct):
         self.sessdata = sessdata
         self.bili_jct = bili_jct
         self._wbi_cache = {}
+
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': (
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                'AppleWebKit/537.36 '
                 '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             ),
             'Cookie': f'SESSDATA={sessdata}; bili_jct={bili_jct}',
             'Referer': 'https://www.bilibili.com/',
         })
+
+        # 评论 API 统一响应诊断
+        # 只记录异常 / 限流，不改变原来的请求和处理逻辑
+        self.session.hooks['response'].append(
+            self._comment_api_response_hook
+        )
+
+    def _comment_api_response_hook(self, response, *args, **kwargs):
+        """
+        统一监听评论系统发往 Bilibili API 的响应。
+
+        只做日志诊断，不修改 response，不 sleep，不重试。
+        """
+        try:
+            request_url = ''
+
+            if response.request is not None:
+                request_url = response.request.url or ''
+
+            # 只检查 Bilibili API 请求
+            if 'api.bilibili.com' not in request_url:
+                return response
+
+            # 日志只保留接口路径，不记录完整 query 参数
+            # 避免日志过长
+            try:
+                path = response.request.path_url.split('?', 1)[0]
+            except Exception:
+                path = request_url.split('?', 1)[0]
+
+            http_status = response.status_code
+
+            api_code = None
+            api_message = ''
+
+            # 尝试解析 B站 JSON 返回
+            try:
+                data = response.json()
+
+                if isinstance(data, dict):
+                    api_code = data.get('code')
+                    api_message = str(
+                        data.get('message')
+                        or data.get('msg')
+                        or ''
+                    )
+
+            except Exception:
+                # 非 JSON 响应不影响原来的业务
+                pass
+
+            # 尝试把 code 标准化为整数
+            try:
+                normalized_code = (
+                    int(api_code)
+                    if api_code is not None
+                    else None
+                )
+            except (TypeError, ValueError):
+                normalized_code = None
+
+            # -------------------------------
+            # 明确的请求频率限制
+            # -------------------------------
+            is_rate_limit = (
+                http_status == 429
+                or normalized_code == -509
+                or '请求过于频繁' in api_message
+                or (
+                    '请求' in api_message
+                    and '频繁' in api_message
+                )
+            )
+
+            if is_rate_limit:
+                add_comment_log(
+                    (
+                        '[API诊断][RATE_LIMIT] '
+                        f'接口={path} '
+                        f'HTTP={http_status} '
+                        f'code={api_code} '
+                        f'message={api_message}'
+                    ),
+                    'warning'
+                )
+
+                return response
+
+            # -------------------------------
+            # HTTP 412 单独标记为风控
+            # 不把它直接等同于“请求过于频繁”
+            # -------------------------------
+            if http_status == 412:
+                add_comment_log(
+                    (
+                        '[API诊断][RISK_CONTROL] '
+                        f'接口={path} '
+                        f'HTTP={http_status} '
+                        f'code={api_code} '
+                        f'message={api_message}'
+                    ),
+                    'warning'
+                )
+
+                return response
+
+            # -------------------------------
+            # 其他 HTTP 错误
+            # -------------------------------
+            if http_status >= 400:
+                add_comment_log(
+                    (
+                        '[API诊断][HTTP_ERROR] '
+                        f'接口={path} '
+                        f'HTTP={http_status} '
+                        f'code={api_code} '
+                        f'message={api_message}'
+                    ),
+                    'warning'
+                )
+
+                return response
+
+            # -------------------------------
+            # HTTP 200，但是 B站业务 code 非 0
+            # -------------------------------
+            if (
+                normalized_code is not None
+                and normalized_code != 0
+            ):
+                add_comment_log(
+                    (
+                        '[API诊断][API_ERROR] '
+                        f'接口={path} '
+                        f'HTTP={http_status} '
+                        f'code={api_code} '
+                        f'message={api_message}'
+                    ),
+                    'warning'
+                )
+
+        except Exception as e:
+            # 诊断代码本身绝不能影响评论监控
+            logger.debug(
+                f'评论API响应诊断异常: {e}'
+            )
+
+        # response hook 必须返回原 response
+        return response
     
     def get_my_uid(self):
         """获取当前用户UID"""
