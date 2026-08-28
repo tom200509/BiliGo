@@ -2478,6 +2478,7 @@ def monitor_messages():
             processed_count = 0
             error_count = 0
             consecutive_errors = 0
+            rate_limit_streak = 0
             
             while monitoring:
                 try:
@@ -2555,10 +2556,24 @@ def monitor_messages():
                         add_log(f"API返回错误: {error_msg}", 'warning', system='message')
                         consecutive_errors += 1
 
-                        # 请求频率限制：触发后长时间等待，避免持续撞限流
+                        # 请求频率限制：使用阶梯式退避，避免持续撞限流
                         if '频繁' in str(error_msg):
-                            add_log("触发B站API频率限制，暂停60秒后重试", 'warning', system='message')
-                            time.sleep(60)
+                            rate_limit_streak += 1
+                    
+                            # 第1次600秒，第2次1200秒，第3次及以后最高1800秒
+                            backoff_seconds = min(
+                                600 * (2 ** (rate_limit_streak - 1)),
+                                1800
+                            )
+                    
+                            add_log(
+                                f"触发B站API频率限制，连续第{rate_limit_streak}次，"
+                                f"暂停{backoff_seconds}秒后重试",
+                                'warning',
+                                system='message'
+                            )
+                    
+                            time.sleep(backoff_seconds)
                             continue
 
                         # 如果是认证相关错误，重新初始化
@@ -2573,6 +2588,7 @@ def monitor_messages():
                         continue
                     
                     consecutive_errors = 0  # 重置连续错误计数
+                    rate_limit_streak = 0  # get_sessions恢复成功，清零限流退避计数
                     
                     # 验证返回的数据结构
                     data = sessions_data.get('data')
