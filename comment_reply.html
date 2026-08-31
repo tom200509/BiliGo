@@ -100,23 +100,25 @@
                         
                         <div class="form-row">
                             <label for="comments-per-video">每个视频拉取的顶层评论条数:</label>
-                            <input type="number" id="comments-per-video" min="1" max="30" step="1" value="10" placeholder="10">
-                            <p class="help-text">单页条数，每页最多 30；与下方「主评论翻页」相乘为单稿可抓到的顶层评论上限</p>
+                            <input type="number" id="comments-per-video" min="1" max="30" step="1" value="30" placeholder="30">
+                            <p class="help-text">单页条数，每页最多 30；与下方「主评论翻页」相乘为单稿可抓到的顶层评论上限；混合模式固定抓取最新30条+热门30条，并按rpid去重</p>
                         </div>
                         
                         <div class="form-row">
                             <label for="comment-main-sort-mode">主评论排序:</label>
                             <select id="comment-main-sort-mode">
-                                <option value="3">按时间（新评论优先，推荐）</option>
+                                <option value="hybrid" selected>按时间+热度（去重，推荐）</option>
+                                <option value="3">按时间（新评论优先）</option>
                                 <option value="2">按热度</option>
                             </select>
-                            <p class="help-text">按热度时新评论可能不在前几页，容易漏检</p>
-                        </div>
-                        
+                            <p class="help-text">
+                                混合模式每个视频抓最新30条+热门30条，按rpid自动去重；最多得到60条主评论
+                            </p>
+                                                    
                         <div class="form-row">
                             <label for="comment-main-pages-max">每个稿件主评论最多翻页数:</label>
                             <input type="number" id="comment-main-pages-max" min="1" max="50" step="1" value="15" placeholder="15">
-                            <p class="help-text">主评论分页拉取，热门视频评论多需适当增大；请求量 ≈ 稿件数 × 翻页数</p>
+                            <p class="help-text">主评论分页拉取，热门视频评论多需适当增大；请求量 ≈ 稿件数 × 翻页数；混合模式固定最新1页+热门1页，此设置仅对单一排序模式生效</p>
                         </div>
                         
                         <div class="form-row">
