@@ -832,7 +832,7 @@ function saveCommentConfig() {
     const videoListStrategy = document.getElementById('video-list-strategy')
         ? document.getElementById('video-list-strategy').value
         : 'both_ends';
-    const commentMainSortMode = parseInt(
+    const commentMainSortMode =
         document.getElementById('comment-main-sort-mode')
             ? document.getElementById('comment-main-sort-mode').value
             : 'hybrid';
