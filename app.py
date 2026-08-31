@@ -4745,41 +4745,41 @@ class CommentAPI:
                 add_comment_log(f"浏览器方式拉取评论失败，改用 WBI: {e}", 'warning')
                 data_json = None
         if not data_json:
-    try:
-        sort_mode = str(
-            comment_config.get('comment_main_sort_mode', 'hybrid')
-            or 'hybrid'
-        ).strip().lower()
-
-        fg = float(
-            comment_config.get('comment_fetch_gap', 1.0) or 0
-        )
-
-        if sort_mode == 'hybrid':
-            return bili_wbi.fetch_main_comment_replies_hybrid(
-                self.session,
-                oid,
-                30,
-                bvid,
-                self._wbi_cache,
-                fetch_gap=fg,
-            )
-
-        main_mode = int(sort_mode)
-        main_pages = int(
-            comment_config.get('comment_main_pages_max', 15) or 15
-        )
-
-        return bili_wbi.fetch_main_comment_replies_paged(
-            self.session,
-            oid,
-            min(int(page_size), 30),
-            bvid,
-            self._wbi_cache,
-            mode=main_mode,
-            max_pages=max(1, main_pages),
-            fetch_gap=fg,
-        )
+            try:
+                sort_mode = str(
+                    comment_config.get('comment_main_sort_mode', 'hybrid')
+                    or 'hybrid'
+                ).strip().lower()
+    
+                fg = float(
+                    comment_config.get('comment_fetch_gap', 1.0) or 0
+                )
+    
+                if sort_mode == 'hybrid':
+                    return bili_wbi.fetch_main_comment_replies_hybrid(
+                        self.session,
+                        oid,
+                        30,
+                        bvid,
+                        self._wbi_cache,
+                        fetch_gap=fg,
+                    )
+    
+                main_mode = int(sort_mode)
+                main_pages = int(
+                    comment_config.get('comment_main_pages_max', 15) or 15
+                )
+    
+                return bili_wbi.fetch_main_comment_replies_paged(
+                    self.session,
+                    oid,
+                    min(int(page_size), 30),
+                    bvid,
+                    self._wbi_cache,
+                    mode=main_mode,
+                    max_pages=max(1, main_pages),
+                    fetch_gap=fg,
+                )
             except Exception as e:
                 add_comment_log(f"拉取评论失败 (oid={oid}): {e}", 'warning')
                 return []
