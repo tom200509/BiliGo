@@ -211,7 +211,7 @@ function loadCommentConfig() {
             document.getElementById('comments-per-video').value =
                 data.comments_per_video !== undefined && data.comments_per_video !== null
                     ? data.comments_per_video
-                    : 10;
+                    : 30;
         }
         if (document.getElementById('comment-monitor-sub-replies')) {
             document.getElementById('comment-monitor-sub-replies').checked =
@@ -228,8 +228,12 @@ function loadCommentConfig() {
                 data.video_list_strategy === 'newest' ? 'newest' : 'both_ends';
         }
         if (document.getElementById('comment-main-sort-mode')) {
+            const sortMode = String(data.comment_main_sort_mode || 'hybrid');
+        
             document.getElementById('comment-main-sort-mode').value =
-                String(data.comment_main_sort_mode) === '2' ? '2' : '3';
+                ['hybrid', '2', '3'].includes(sortMode)
+                    ? sortMode
+                    : 'hybrid';
         }
         if (document.getElementById('comment-main-pages-max')) {
             document.getElementById('comment-main-pages-max').value =
@@ -831,19 +835,12 @@ function saveCommentConfig() {
     const commentMainSortMode = parseInt(
         document.getElementById('comment-main-sort-mode')
             ? document.getElementById('comment-main-sort-mode').value
-            : '3',
-        10
-    );
-    const commentMainPagesMax = parseInt(
-        document.getElementById('comment-main-pages-max')
-            ? document.getElementById('comment-main-pages-max').value
-            : '15',
-        10
-    );
-    if (commentMainSortMode !== 2 && commentMainSortMode !== 3) {
-        showToast('主评论排序须为 2 或 3', 'error');
+            : 'hybrid';
+
+    if (!['hybrid', '2', '3'].includes(commentMainSortMode)) {
+        showToast('主评论排序设置无效', 'error');
         return;
-    }
+}
     if (isNaN(commentMainPagesMax) || commentMainPagesMax < 1 || commentMainPagesMax > 50) {
         showToast('主评论翻页数须在 1～50 之间', 'error');
         return;
