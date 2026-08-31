@@ -180,6 +180,94 @@ def fetch_main_comment_replies_paged(
         pag = json.dumps({"offset": nxt}, separators=(",", ":"))
     return out
 
+def fetch_main_comment_replies_hybrid(
+    session,
+    oid,
+    ps: int = 30,
+    bvid: str | None = None,
+    wbi_cache: dict | None = None,
+    fetch_gap: float = 0,
+) -> list:
+    """
+    混合抓取主评论：
+    1. 按时间抓最新30条
+    2. 按热度抓热门30条
+    3. 按 rpid 去重
+    4. 最终按评论时间倒序，最新评论优先
+    """
+
+    ps = min(max(int(ps), 1), 30)
+
+    seen: set[int] = set()
+    merged: list = []
+
+    def fetch_first_page(mode: int):
+        try:
+            j = fetch_reply_wbi_main(
+                session,
+                oid,
+                ps,
+                bvid,
+                wbi_cache,
+                pagination_str='{"offset":""}',
+                mode=mode,
+            )
+        except Exception:
+            return []
+
+        if not j or j.get("code") != 0:
+            return []
+
+        data = j.get("data") or {}
+        return merge_reply_main_data(data)
+
+    # 3 = 按时间（最新优先）
+    latest = fetch_first_page(3)
+
+    for item in latest:
+        if not isinstance(item, dict):
+            continue
+
+        try:
+            rpid = int(item.get("rpid"))
+        except (TypeError, ValueError):
+            continue
+
+        if rpid in seen:
+            continue
+
+        seen.add(rpid)
+        merged.append(item)
+
+    # 两种排序之间增加现有的请求间隔
+    if fetch_gap > 0:
+        time.sleep(float(fetch_gap))
+
+    # 2 = 按热度
+    hot = fetch_first_page(2)
+
+    for item in hot:
+        if not isinstance(item, dict):
+            continue
+
+        try:
+            rpid = int(item.get("rpid"))
+        except (TypeError, ValueError):
+            continue
+
+        if rpid in seen:
+            continue
+
+        seen.add(rpid)
+        merged.append(item)
+
+    # 最终仍然按照评论时间，新评论优先
+    merged.sort(
+        key=lambda x: int(x.get("ctime") or 0),
+        reverse=True,
+    )
+
+    return merged
 
 def fetch_reply_wbi_reply(
     session,
