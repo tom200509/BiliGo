@@ -4418,7 +4418,7 @@ comment_config = {
     'comments_per_video': 10,   # 每个视频获取的评论数量
     'comment_monitor_sub_replies': True,  # 是否监控楼中楼里「回复我的」评论
     'max_sub_pages_per_root': 15,  # 每个根评论下最多翻多少页楼中楼
-    'comment_main_sort_mode': 3,  # 主评论排序：2 热度 3 时间（新评论优先）
+    'comment_main_sort_mode': 'hybrid',  # 主评论抓取策略：hybrid=时间+热度去重，2/3=单一排序
     'comment_main_pages_max': 15,  # 每个稿件主评论最多翻页数
     'video_list_strategy': 'both_ends',  # newest=只扫最新稿件；both_ends=超过上限时新旧各半，避免漏最旧稿
     'comment_send_delay': 2.0,
@@ -5084,12 +5084,12 @@ def handle_comment_config():
             if data and 'comment_monitor_sub_replies' in data:
                 data['comment_monitor_sub_replies'] = bool(data.get('comment_monitor_sub_replies'))
             if data and 'comment_main_sort_mode' in data:
-                try:
-                    sm = int(data['comment_main_sort_mode'])
-                except (TypeError, ValueError):
-                    return jsonify({'success': False, 'error': '主评论排序模式无效'})
-                if sm not in (2, 3):
-                    return jsonify({'success': False, 'error': '主评论排序须为 2（热度）或 3（时间）'})
+                sm = str(data.get('comment_main_sort_mode') or '').strip().lower()
+                if sm not in ('hybrid', '2', '3'):
+                    return jsonify({
+                        'success': False,
+                        'error': '主评论排序须为 hybrid、2 或 3'
+                    })
                 data['comment_main_sort_mode'] = sm
             if data and 'comment_main_pages_max' in data:
                 try:
@@ -5638,7 +5638,7 @@ def reset_all_data():
             'comments_per_video': 10,
             'comment_monitor_sub_replies': True,
             'max_sub_pages_per_root': 15,
-            'comment_main_sort_mode': 3,
+            'comment_main_sort_mode': 'hybrid',
             'comment_main_pages_max': 15,
             'video_list_strategy': 'both_ends',
             'comment_send_delay': 2.0,
