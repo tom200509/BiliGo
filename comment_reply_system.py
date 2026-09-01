@@ -36,7 +36,7 @@ class CommentReplySystem:
             'comment_fetch_mode': 'wbi',
             'comment_monitor_sub_replies': True,
             'max_sub_pages_per_root': 15,
-            'comment_main_sort_mode': 3,
+            'comment_main_sort_mode': 'hybrid',
             'comment_main_pages_max': 15,
             'video_list_strategy': 'both_ends',
         }
@@ -301,9 +301,25 @@ class CommentReplySystem:
             if cache is None:
                 self.bili_api._wbi_cache = {}
                 cache = self.bili_api._wbi_cache
-            main_mode = int(self.config.get('comment_main_sort_mode', 3) or 3)
+            sort_mode = str(
+                self.config.get('comment_main_sort_mode', 'hybrid') or 'hybrid'
+            ).strip().lower()
+            
             main_pages = int(self.config.get('comment_main_pages_max', 15) or 15)
             fg = float(self.config.get('comment_fetch_gap', 1.0) or 0)
+            
+            if sort_mode == 'hybrid':
+                return bili_wbi.fetch_main_comment_replies_hybrid(
+                    self.bili_api.session,
+                    oid,
+                    30,
+                    bvid,
+                    cache,
+                    fetch_gap=fg,
+                )
+            
+            main_mode = int(sort_mode)
+            
             return bili_wbi.fetch_main_comment_replies_paged(
                 self.bili_api.session,
                 oid,
