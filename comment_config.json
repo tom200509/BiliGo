@@ -12,7 +12,7 @@
   "comments_per_video": 10,
   "comment_monitor_sub_replies": true,
   "max_sub_pages_per_root": 15,
-  "comment_main_sort_mode": 3,
+  "comment_main_sort_mode": "hybrid",
   "comment_main_pages_max": 15,
   "video_list_strategy": "both_ends",
   "comment_send_delay": 2.0,
