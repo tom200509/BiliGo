@@ -429,7 +429,10 @@ function updateLogDisplay() {
     console.log('生成日志HTML，条目数:', filteredLogs.length);
     
     const logHtml = filteredLogs.map(log => {
-        const timestamp = new Date(log.timestamp).toLocaleString('zh-CN');
+        const timestamp = new Date(log.timestamp).toLocaleString('zh-CN', {
+            timeZone: 'Asia/Shanghai',
+            hour12: false
+        });
         const levelClass = `log-${log.level}`;
         const levelText = getLevelText(log.level);
         
@@ -500,7 +503,10 @@ function updateLogCounts() {
 
 // 更新最后更新时间
 function updateLastUpdateTime() {
-    const now = new Date().toLocaleString('zh-CN');
+    const now = new Date().toLocaleString('zh-CN', {
+        timeZone: 'Asia/Shanghai',
+        hour12: false
+    });
     document.getElementById('lastUpdate').textContent = now;
 }
 
