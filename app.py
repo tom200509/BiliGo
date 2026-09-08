@@ -4,7 +4,7 @@ import os
 import threading
 import time
 import requests
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import logging
 import hashlib
 import uuid
@@ -18,6 +18,9 @@ APP_VERSION = '20260518 (Emergency)'
 APP_VERSION_DATE = '2026-05-18'
 
 app = Flask(__name__)
+
+# 北京时间 UTC+8
+BEIJING_TZ = timezone(timedelta(hours=8))
 
 
 def merge_bilibili_reply_main_block(reply_data):
@@ -1132,7 +1135,7 @@ def increment_user_reply_count(user_id, stats):
 
 def add_log(message, log_type='info', system='message', error_details='', context='', account_name=''):
     """添加日志 - 支持区分私信和评论系统，并在错误时发送邮件通知"""
-    timestamp = datetime.now().isoformat()
+    timestamp = datetime.now(BEIJING_TZ).isoformat()
     log_entry = {
         'timestamp': timestamp,
         'message': message,
